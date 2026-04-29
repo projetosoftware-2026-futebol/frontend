@@ -1,9 +1,8 @@
-import React from "react";
 import { useAuth0 } from "@auth0/auth0-react";
 import Stack from "@mui/material/Stack";
 import Button from "@mui/material/Button";
 
-const LoginButton = () => {
+export default function LoginButton() {
   const { loginWithRedirect } = useAuth0();
 
   return (
@@ -13,6 +12,4 @@ const LoginButton = () => {
       </Stack>
     </>
   );
-};
-
-export default LoginButton;
+}

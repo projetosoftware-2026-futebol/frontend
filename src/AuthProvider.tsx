@@ -1,15 +1,9 @@
 import { useAuth0 } from "@auth0/auth0-react";
-import React, { useEffect, useState } from "react";
 import LoginButton from "./LoginButton";
 import LogoutButton from "./LogoutButton";
+import { useEffect, useState, type ReactNode } from "react";
 
-const BASE_URL_USERS = "/api";
-const BASE_URL_CONNECTIONS = "/api";
-
-export default function AuthProvider({ children }) {
-  const [pessoas, setPessoas] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
+export default function AuthProvider({ children }: { children: ReactNode }) {
   const [token, setToken] = useState("");
   const [isAdmin, setIsAdmin] = useState(false);
 
@@ -38,5 +32,14 @@ export default function AuthProvider({ children }) {
     return <LoginButton />;
   }
 
-  return { children };
+  return (
+    <>
+      {token}
+      {isAdmin && (
+        <div>Bem-vindo, {user && user.name}! Você é um administrador.</div>
+      )}
+      {children}
+      <LogoutButton />
+    </>
+  );
 }
