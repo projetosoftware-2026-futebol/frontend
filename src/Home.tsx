@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Autocomplete from "@mui/material/Autocomplete";
 import Button from "@mui/material/Button";
 import Chip from "@mui/material/Chip";
@@ -67,22 +67,72 @@ type ClubForm = {
   image_url: string;
 };
 
+type MatchTeam = {
+  id: number;
+  name: string;
+  imageUrl?: string | null;
+  players: Player[];
+  rating: number;
+  attack: number;
+  midfield: number;
+  defense: number;
+  keeper: number;
+};
+
+type MatchEventKind = "whistle" | "chance" | "save" | "goal" | "drama";
+type MatchSide = "home" | "away";
+
+type MatchEvent = {
+  id: string;
+  minute: number;
+  kind: MatchEventKind;
+  side?: MatchSide;
+  player?: Player;
+  assister?: Player;
+  probability?: number;
+  title: string;
+  detail: string;
+};
+
+type MatchSimulation = {
+  id: string;
+  home: MatchTeam;
+  away: MatchTeam;
+  homeGoals: number;
+  awayGoals: number;
+  homePossession: number;
+  homeShots: number;
+  awayShots: number;
+  homeXg: number;
+  awayXg: number;
+  stoppageMinutes: number;
+  finalMinute: number;
+  events: MatchEvent[];
+};
+
+type MatchModalState = {
+  simulation: MatchSimulation;
+  progress: number;
+  status: "running" | "saving" | "done" | "error";
+  error?: string;
+};
+
 const POSITIONS: Position[] = ["GOL", "LE", "ZAG", "LD", "MC", "PE", "ATA", "PD"];
 const PLAYER_STATUS_FILTERS = ["TODOS", "DISPONIVEL", "COMPRADO"] as const;
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? "").replace(/\/$/, "");
 
 const FORMATION_SLOTS = [
-  { id: "pe", label: "PE", line: "Ataque", number: 11, positions: ["PE", "ATA"], x: 21, y: 11 },
-  { id: "ata", label: "ATA", line: "Ataque", number: 9, positions: ["ATA"], x: 50, y: 8 },
-  { id: "pd", label: "PD", line: "Ataque", number: 7, positions: ["PD", "ATA"], x: 79, y: 11 },
-  { id: "mc1", label: "MC", line: "Meio", number: 8, positions: ["MC"], x: 25, y: 34 },
-  { id: "mc2", label: "MC", line: "Meio", number: 10, positions: ["MC"], x: 50, y: 38 },
-  { id: "mc3", label: "MC", line: "Meio", number: 20, positions: ["MC"], x: 75, y: 34 },
-  { id: "le", label: "LE", line: "Defesa", number: 6, positions: ["LE"], x: 15, y: 60 },
-  { id: "zag1", label: "ZAG", line: "Defesa", number: 4, positions: ["ZAG"], x: 38, y: 62 },
-  { id: "zag2", label: "ZAG", line: "Defesa", number: 3, positions: ["ZAG"], x: 62, y: 62 },
-  { id: "ld", label: "LD", line: "Defesa", number: 2, positions: ["LD"], x: 85, y: 60 },
-  { id: "gol", label: "GOL", line: "Gol", number: 1, positions: ["GOL"], x: 50, y: 84 },
+  { id: "pe", label: "PE", line: "Ataque", number: 11, positions: ["PE", "ATA"], x: 21, y: 17 },
+  { id: "ata", label: "ATA", line: "Ataque", number: 9, positions: ["ATA"], x: 50, y: 14 },
+  { id: "pd", label: "PD", line: "Ataque", number: 7, positions: ["PD", "ATA"], x: 79, y: 17 },
+  { id: "mc1", label: "MC", line: "Meio", number: 8, positions: ["MC"], x: 25, y: 40 },
+  { id: "mc2", label: "MC", line: "Meio", number: 10, positions: ["MC"], x: 50, y: 44 },
+  { id: "mc3", label: "MC", line: "Meio", number: 20, positions: ["MC"], x: 75, y: 40 },
+  { id: "le", label: "LE", line: "Defesa", number: 6, positions: ["LE"], x: 15, y: 66 },
+  { id: "zag1", label: "ZAG", line: "Defesa", number: 4, positions: ["ZAG"], x: 38, y: 68 },
+  { id: "zag2", label: "ZAG", line: "Defesa", number: 3, positions: ["ZAG"], x: 62, y: 68 },
+  { id: "ld", label: "LD", line: "Defesa", number: 2, positions: ["LD"], x: 85, y: 66 },
+  { id: "gol", label: "GOL", line: "Gol", number: 1, positions: ["GOL"], x: 50, y: 89 },
 ] as const;
 
 type FormationSlot = (typeof FORMATION_SLOTS)[number];
@@ -209,17 +259,373 @@ function averageRating(players: Player[]) {
   return Math.round(total / players.length);
 }
 
-function clampScore(score: number) {
-  return Math.max(0, Math.min(6, score));
+function clampNumber(value: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, value));
 }
 
-function simulateScore(teamRating: number, opponentRating: number) {
-  const teamEdge = (teamRating - opponentRating) / 18;
-  const opponentEdge = (opponentRating - teamRating) / 18;
-  const teamGoals = clampScore(Math.round(1.2 + teamEdge + Math.random() * 2.4));
-  const opponentGoals = clampScore(Math.round(1.1 + opponentEdge + Math.random() * 2.2));
+function randomInt(min: number, max: number) {
+  return Math.floor(Math.random() * (max - min + 1)) + min;
+}
 
-  return { teamGoals, opponentGoals };
+function randomFloat(min: number, max: number) {
+  return Math.random() * (max - min) + min;
+}
+
+function poissonSample(lambda: number) {
+  const limit = Math.exp(-lambda);
+  let product = 1;
+  let goals = 0;
+
+  do {
+    goals++;
+    product *= Math.random();
+  } while (product > limit);
+
+  return goals - 1;
+}
+
+function positionGoalWeight(position: Position) {
+  const weights: Record<Position, number> = {
+    ATA: 7,
+    PD: 6.4,
+    PE: 6.4,
+    MC: 3.9,
+    LD: 1.8,
+    LE: 1.8,
+    ZAG: 1.3,
+    GOL: 0.04,
+  };
+
+  return weights[position];
+}
+
+function weightedChoice<T>(items: T[], weight: (item: T) => number) {
+  const total = items.reduce((sum, item) => sum + Math.max(0, weight(item)), 0);
+
+  if (total <= 0) {
+    return items[randomInt(0, Math.max(0, items.length - 1))];
+  }
+
+  let cursor = Math.random() * total;
+
+  for (const item of items) {
+    cursor -= Math.max(0, weight(item));
+    if (cursor <= 0) {
+      return item;
+    }
+  }
+
+  return items[items.length - 1];
+}
+
+function playerWeight(player: Player) {
+  return positionGoalWeight(player.posicao) * Math.max(8, player.rating - 52);
+}
+
+function averagePositionRating(players: Player[], positions: Position[], fallback: number) {
+  const selected = players.filter((player) => positions.includes(player.posicao));
+  return selected.length > 0 ? averageRating(selected) : fallback;
+}
+
+function initials(name: string) {
+  return name
+    .split(" ")
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase() ?? "")
+    .join("");
+}
+
+function syntheticPlayer(clubName: string, slot: FormationSlot, index: number, baseRating: number): Player {
+  const position = slot.label as Position;
+  const rating = Math.round(clampNumber(baseRating + randomFloat(-5, 5), 62, 88));
+
+  return {
+    id: -1000 - index,
+    nome: `${clubName} ${slot.label} ${index + 1}`,
+    valor: rating,
+    rating,
+    posicao: position,
+    status: "COMPRADO",
+    clube_id: null,
+  };
+}
+
+function buildFormationSquad(roster: Player[], clubName: string, baseRating: number) {
+  const usedIds = new Set<number>();
+
+  return FORMATION_SLOTS.map((slot, index) => {
+    const picked = roster
+      .filter((player) => (slot.positions as readonly Position[]).includes(player.posicao))
+      .filter((player) => !usedIds.has(player.id))
+      .sort((a, b) => b.rating - a.rating || a.nome.localeCompare(b.nome))[0];
+
+    if (picked) {
+      usedIds.add(picked.id);
+      return picked;
+    }
+
+    return syntheticPlayer(clubName, slot, index, baseRating);
+  });
+}
+
+function buildMatchTeam(club: Club, squad: Player[], fallbackRating: number): MatchTeam {
+  const rating = averageRating(squad) || fallbackRating;
+
+  return {
+    id: club.id,
+    name: club.name,
+    imageUrl: club.image_url,
+    players: squad,
+    rating,
+    attack: averagePositionRating(squad, ["ATA", "PD", "PE"], rating),
+    midfield: averagePositionRating(squad, ["MC"], rating),
+    defense: averagePositionRating(squad, ["LD", "LE", "ZAG"], rating),
+    keeper: averagePositionRating(squad, ["GOL"], rating),
+  };
+}
+
+function teamExpectedGoals(team: MatchTeam, opponent: MatchTeam) {
+  const ratingEdge = team.rating - opponent.rating;
+  const attackEdge = team.attack - opponent.defense;
+  const midfieldEdge = team.midfield - opponent.midfield;
+  const keeperWall = opponent.keeper - 78;
+  const chaos = randomFloat(-0.36, 0.42);
+
+  return clampNumber(
+    1.12 + ratingEdge * 0.01 + attackEdge * 0.024 + midfieldEdge * 0.01 - keeperWall * 0.008 + chaos,
+    0.28,
+    3.15,
+  );
+}
+
+function softenScore(homeGoals: number, awayGoals: number) {
+  let home = Math.min(5, homeGoals);
+  let away = Math.min(5, awayGoals);
+
+  while (home + away > 7) {
+    if (home > away || (home === away && Math.random() > 0.5)) {
+      home--;
+    } else {
+      away--;
+    }
+  }
+
+  return { home, away };
+}
+
+function goalProbability(team: MatchTeam, opponent: MatchTeam, player: Player) {
+  const raw =
+    9 +
+    positionGoalWeight(player.posicao) * 1.7 +
+    (player.rating - 74) * 0.55 +
+    (team.attack - opponent.defense) * 0.35 +
+    randomFloat(0, 8);
+
+  return Math.round(clampNumber(raw, 5, 48));
+}
+
+function pickScorer(team: MatchTeam) {
+  const outfield = team.players.filter((player) => player.posicao !== "GOL");
+  return weightedChoice(outfield.length > 0 ? outfield : team.players, playerWeight);
+}
+
+function pickAssister(team: MatchTeam, scorer: Player) {
+  const options = team.players.filter((player) => player.id !== scorer.id && player.posicao !== "GOL");
+
+  if (options.length === 0 || Math.random() < 0.24) {
+    return undefined;
+  }
+
+  return weightedChoice(options, (player) => {
+    const positionBoost = player.posicao === "MC" ? 5 : positionGoalWeight(player.posicao);
+    return positionBoost * Math.max(8, player.rating - 55);
+  });
+}
+
+function minuteLabel(minute: number) {
+  return minute > 90 ? `90+${minute - 90}'` : `${minute}'`;
+}
+
+function uniqueMinute(usedMinutes: Set<number>, finalMinute: number) {
+  let minute = randomInt(3, finalMinute);
+  let attempts = 0;
+
+  while (usedMinutes.has(minute) && attempts < 30) {
+    minute = clampNumber(minute + randomInt(1, 4), 3, finalMinute);
+    attempts++;
+  }
+
+  usedMinutes.add(minute);
+  return minute;
+}
+
+function createGoalEvent(
+  side: MatchSide,
+  team: MatchTeam,
+  opponent: MatchTeam,
+  minute: number,
+  index: number,
+): MatchEvent {
+  const scorer = pickScorer(team);
+  const assister = pickAssister(team, scorer);
+  const probability = goalProbability(team, opponent, scorer);
+
+  return {
+    id: `${side}-goal-${minute}-${index}`,
+    minute,
+    kind: "goal",
+    side,
+    player: scorer,
+    assister,
+    probability,
+    title: `GOL - ${scorer.nome}`,
+    detail: `${scorer.posicao} OVR ${scorer.rating} | chance ${probability}%${
+      assister ? ` | passe de ${assister.nome}` : ""
+    }`,
+  };
+}
+
+function createChanceEvent(side: MatchSide, team: MatchTeam, opponent: MatchTeam, minute: number, index: number) {
+  const player = pickScorer(team);
+  const probability = goalProbability(team, opponent, player);
+  const saved = Math.random() < 0.42;
+
+  return {
+    id: `${side}-chance-${minute}-${index}`,
+    minute,
+    kind: saved ? "save" : "chance",
+    side,
+    player,
+    probability,
+    title: saved ? `Defesa grande em chute de ${player.nome}` : `${player.nome} quase marcou`,
+    detail: `${player.posicao} OVR ${player.rating} | chance ${probability}%`,
+  } satisfies MatchEvent;
+}
+
+function createDramaEvent(home: MatchTeam, away: MatchTeam, minute: number, index: number): MatchEvent {
+  const homePressure = home.midfield + randomFloat(-7, 7);
+  const side: MatchSide = homePressure >= away.midfield ? "home" : "away";
+  const team = side === "home" ? home : away;
+  const player = weightedChoice(team.players, (candidate) =>
+    candidate.posicao === "MC" ? candidate.rating * 4 : candidate.rating,
+  );
+
+  return {
+    id: `drama-${minute}-${index}`,
+    minute,
+    kind: "drama",
+    side,
+    player,
+    title: `${team.name} aperta o ritmo`,
+    detail: `${player.nome} controla o lance pelo meio com OVR ${player.rating}`,
+  };
+}
+
+function createMatchEvents(home: MatchTeam, away: MatchTeam, homeGoals: number, awayGoals: number, finalMinute: number) {
+  const usedMinutes = new Set<number>();
+  const events: MatchEvent[] = [
+    {
+      id: "kickoff",
+      minute: 1,
+      kind: "whistle",
+      title: "Bola rolando",
+      detail: "Os dois escudos entram no choque.",
+    },
+    {
+      id: "halftime",
+      minute: 45,
+      kind: "whistle",
+      title: "Intervalo",
+      detail: "Ajustes, agua e mais dez segundos de caos organizado.",
+    },
+  ];
+
+  for (let index = 0; index < homeGoals; index++) {
+    events.push(createGoalEvent("home", home, away, uniqueMinute(usedMinutes, finalMinute), index));
+  }
+
+  for (let index = 0; index < awayGoals; index++) {
+    events.push(createGoalEvent("away", away, home, uniqueMinute(usedMinutes, finalMinute), index));
+  }
+
+  const extraEvents = randomInt(7, 11);
+  const homeThreat = Math.max(1, home.attack + home.midfield * 0.4);
+  const awayThreat = Math.max(1, away.attack + away.midfield * 0.4);
+
+  for (let index = 0; index < extraEvents; index++) {
+    const minute = uniqueMinute(usedMinutes, finalMinute);
+    const homeEvent = Math.random() < homeThreat / (homeThreat + awayThreat);
+    const side: MatchSide = homeEvent ? "home" : "away";
+    const team = homeEvent ? home : away;
+    const opponent = homeEvent ? away : home;
+
+    events.push(
+      Math.random() < 0.72
+        ? createChanceEvent(side, team, opponent, minute, index)
+        : createDramaEvent(home, away, minute, index),
+    );
+  }
+
+  return events.sort((a, b) => a.minute - b.minute || a.id.localeCompare(b.id));
+}
+
+function scoreAtMinute(simulation: MatchSimulation, minute: number) {
+  return simulation.events.reduce(
+    (score, event) => {
+      if (event.kind === "goal" && event.minute <= minute) {
+        if (event.side === "home") {
+          score.home++;
+        } else if (event.side === "away") {
+          score.away++;
+        }
+      }
+
+      return score;
+    },
+    { home: 0, away: 0 },
+  );
+}
+
+function currentMatchMinute(simulation: MatchSimulation, progress: number) {
+  return Math.max(1, Math.round(simulation.finalMinute * progress));
+}
+
+function isShotEvent(event: MatchEvent) {
+  return event.kind === "goal" || event.kind === "chance" || event.kind === "save";
+}
+
+function simulateMatch(home: MatchTeam, away: MatchTeam): MatchSimulation {
+  const homeExpected = teamExpectedGoals(home, away);
+  const awayExpected = teamExpectedGoals(away, home);
+  const rawHomeGoals = poissonSample(homeExpected);
+  const rawAwayGoals = poissonSample(awayExpected);
+  const score = softenScore(rawHomeGoals, rawAwayGoals);
+  const stoppageMinutes = randomInt(1, 7);
+  const finalMinute = 90 + stoppageMinutes;
+  const homePossession = Math.round(
+    clampNumber(50 + (home.midfield - away.midfield) * 0.7 + randomFloat(-8, 8), 34, 66),
+  );
+  const homeShots = Math.max(score.home + 3, Math.round(homeExpected * 4 + randomInt(2, 7)));
+  const awayShots = Math.max(score.away + 3, Math.round(awayExpected * 4 + randomInt(2, 7)));
+  const homeXg = Number((homeExpected + score.home * 0.14 + randomFloat(-0.18, 0.22)).toFixed(2));
+  const awayXg = Number((awayExpected + score.away * 0.14 + randomFloat(-0.18, 0.22)).toFixed(2));
+
+  return {
+    id: `match-${Date.now()}-${randomInt(1000, 9999)}`,
+    home,
+    away,
+    homeGoals: score.home,
+    awayGoals: score.away,
+    homePossession,
+    homeShots,
+    awayShots,
+    homeXg,
+    awayXg,
+    stoppageMinutes,
+    finalMinute,
+    events: createMatchEvents(home, away, score.home, score.away, finalMinute),
+  };
 }
 
 export default function Home() {
@@ -242,8 +648,10 @@ export default function Home() {
   const [marketStatus, setMarketStatus] =
     useState<(typeof PLAYER_STATUS_FILTERS)[number]>("TODOS");
   const [notice, setNotice] = useState<Notice | null>(null);
+  const [matchModal, setMatchModal] = useState<MatchModalState | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const savedMatchIdsRef = useRef(new Set<string>());
 
   const loadDashboard = useCallback(async (quiet = false) => {
     const [playersResult, clubsResult, leaguesResult, gamesResult] = await Promise.allSettled([
@@ -296,7 +704,7 @@ export default function Home() {
     if (failures.length > 0 && !quiet) {
       setNotice({
         type: "error",
-        text: `Nao consegui carregar: ${failures.join(", ")}. Confere se o gateway esta rodando.`,
+        text: `Nao consegui carregar: ${failures.join(", ")}. Confere se a API da AWS esta acessivel.`,
       });
     }
 
@@ -317,6 +725,90 @@ export default function Home() {
     setLoading(true);
     await loadDashboard();
   }
+
+  const finishMatch = useCallback(
+    async (simulation: MatchSimulation) => {
+      if (savedMatchIdsRef.current.has(simulation.id)) {
+        return;
+      }
+
+      savedMatchIdsRef.current.add(simulation.id);
+
+      try {
+        await apiFetch<Game>("/jogos/play", {
+          method: "POST",
+          body: JSON.stringify({
+            time_a: String(simulation.home.id),
+            pontos_a: simulation.homeGoals,
+            time_b: String(simulation.away.id),
+            pontos_b: simulation.awayGoals,
+          }),
+        });
+
+        setMatchModal((current) =>
+          current?.simulation.id === simulation.id
+            ? { ...current, progress: 1, status: "done" }
+            : current,
+        );
+        setNotice({
+          type: "success",
+          text: `${simulation.home.name} ${simulation.homeGoals} x ${simulation.awayGoals} ${simulation.away.name}`,
+        });
+        await loadDashboard(true);
+      } catch (error) {
+        setMatchModal((current) =>
+          current?.simulation.id === simulation.id
+            ? {
+                ...current,
+                progress: 1,
+                status: "error",
+                error: error instanceof Error ? error.message : "Falha ao registrar jogo.",
+              }
+            : current,
+        );
+      } finally {
+        setSaving(false);
+      }
+    },
+    [loadDashboard],
+  );
+
+  const runningSimulation = matchModal?.status === "running" ? matchModal.simulation : null;
+
+  useEffect(() => {
+    if (!runningSimulation) {
+      return;
+    }
+
+    const durationMs = 10_000;
+    const startedAt = Date.now();
+    const intervalId = window.setInterval(() => {
+      setMatchModal((current) => {
+        if (!current || current.simulation.id !== runningSimulation.id) {
+          return current;
+        }
+
+        return {
+          ...current,
+          progress: clampNumber((Date.now() - startedAt) / durationMs, 0, 1),
+        };
+      });
+    }, 120);
+
+    const timeoutId = window.setTimeout(() => {
+      setMatchModal((current) =>
+        current?.simulation.id === runningSimulation.id
+          ? { ...current, progress: 1, status: "saving" }
+          : current,
+      );
+      void finishMatch(runningSimulation);
+    }, durationMs);
+
+    return () => {
+      window.clearInterval(intervalId);
+      window.clearTimeout(timeoutId);
+    };
+  }, [finishMatch, runningSimulation]);
 
   const selectedClub = useMemo(
     () => clubs.find((club) => club.id === selectedClubId) ?? null,
@@ -376,6 +868,60 @@ export default function Home() {
   const opponentRating = opponentPlayers.length > 0 ? averageRating(opponentPlayers) : 78;
   const selectedSquadCost = lineupPlayers.reduce((sum, player) => sum + player.valor, 0);
   const lineupComplete = FORMATION_SLOTS.every((slot) => lineup[slot.id] !== null);
+  const activeMinute = matchModal
+    ? currentMatchMinute(matchModal.simulation, matchModal.progress)
+    : 1;
+  const activeScore = matchModal
+    ? scoreAtMinute(matchModal.simulation, activeMinute)
+    : { home: 0, away: 0 };
+  const visibleMatchEvents = matchModal
+    ? matchModal.simulation.events.filter((event) => event.minute <= activeMinute)
+    : [];
+  const liveMatchStats = matchModal
+    ? (() => {
+        const simulation = matchModal.simulation;
+        const settled = matchModal.status === "done" || matchModal.status === "error";
+        const progress = settled ? 1 : matchModal.progress;
+        const statProgress = clampNumber(progress + 0.03, 0, 1);
+        const visibleHomeShots = visibleMatchEvents.filter(
+          (event) => event.side === "home" && isShotEvent(event),
+        ).length;
+        const visibleAwayShots = visibleMatchEvents.filter(
+          (event) => event.side === "away" && isShotEvent(event),
+        ).length;
+        const homeShots = settled
+          ? simulation.homeShots
+          : Math.max(activeScore.home, visibleHomeShots, Math.floor(simulation.homeShots * statProgress));
+        const awayShots = settled
+          ? simulation.awayShots
+          : Math.max(activeScore.away, visibleAwayShots, Math.floor(simulation.awayShots * statProgress));
+        const homePossession = settled
+          ? simulation.homePossession
+          : Math.round(
+              clampNumber(
+                50 + (simulation.homePossession - 50) * clampNumber(progress * 1.35, 0, 1),
+                34,
+                66,
+              ),
+            );
+
+        return {
+          stoppage: activeMinute >= 90 || settled ? `+${simulation.stoppageMinutes}` : "A definir",
+          homePossession,
+          awayPossession: 100 - homePossession,
+          homeShots,
+          awayShots,
+          homeXg: (settled
+            ? simulation.homeXg
+            : Math.max(activeScore.home * 0.18, simulation.homeXg * statProgress)
+          ).toFixed(2),
+          awayXg: (settled
+            ? simulation.awayXg
+            : Math.max(activeScore.away * 0.18, simulation.awayXg * statProgress)
+          ).toFixed(2),
+        };
+      })()
+    : null;
 
   const filteredMarketPlayers = useMemo(() => {
     const query = marketQuery.trim().toLowerCase();
@@ -574,7 +1120,7 @@ export default function Home() {
     setNotice({ type: "info", text: "Escalacao preenchida com os melhores disponiveis." });
   }
 
-  async function playMatch() {
+  function playMatch() {
     if (typeof selectedClubId !== "number" || typeof opponentClubId !== "number") {
       setNotice({ type: "error", text: "Selecione seu clube e o adversario." });
       return;
@@ -590,32 +1136,20 @@ export default function Home() {
       return;
     }
 
-    setSaving(true);
-
-    try {
-      const score = simulateScore(teamRating, opponentRating);
-      await apiFetch<Game>("/jogos/play", {
-        method: "POST",
-        body: JSON.stringify({
-          time_a: String(selectedClubId),
-          pontos_a: score.teamGoals,
-          time_b: String(opponentClubId),
-          pontos_b: score.opponentGoals,
-        }),
-      });
-
-      setNotice({
-        type: "success",
-        text: `${selectedClub?.name ?? "Seu time"} ${score.teamGoals} x ${
-          score.opponentGoals
-        } ${opponentClub?.name ?? "Adversario"}`,
-      });
-      await loadDashboard(true);
-    } catch (error) {
-      setNotice({ type: "error", text: error instanceof Error ? error.message : "Falha ao jogar." });
-    } finally {
-      setSaving(false);
+    if (!selectedClub || !opponentClub) {
+      setNotice({ type: "error", text: "Selecione clubes validos para jogar." });
+      return;
     }
+
+    setSaving(true);
+    setNotice(null);
+
+    const opponentSquad = buildFormationSquad(opponentPlayers, opponentClub.name, opponentRating || 78);
+    const home = buildMatchTeam(selectedClub, lineupPlayers, teamRating || 78);
+    const away = buildMatchTeam(opponentClub, opponentSquad, opponentRating || 78);
+    const simulation = simulateMatch(home, away);
+
+    setMatchModal({ simulation, progress: 0, status: "running" });
   }
 
   function clubName(clubId: string) {
@@ -634,7 +1168,7 @@ export default function Home() {
       <header className="topbar">
         <div>
           <p className="eyebrow">Fut Manager</p>
-          <h1>Monte seu 4-3-3</h1>
+          <h1>FUT MANAGER</h1>
         </div>
         <div className="topbar-stats" aria-label="Resumo dos servicos">
           <Chip label={`${players.length} jogadores`} color="success" variant="outlined" />
@@ -936,6 +1470,122 @@ export default function Home() {
           </div>
         </aside>
       </section>
+
+      {matchModal && (
+        <div className="match-modal-backdrop" role="dialog" aria-modal="true">
+          <section className={`match-modal match-modal-${matchModal.status}`}>
+            <header className="match-modal-header">
+              <div>
+                <p className="eyebrow">Ao vivo</p>
+                <h2>
+                  {matchModal.simulation.home.name} x {matchModal.simulation.away.name}
+                </h2>
+              </div>
+              <button
+                type="button"
+                onClick={() => setMatchModal(null)}
+                disabled={matchModal.status === "running" || matchModal.status === "saving"}
+              >
+                Fechar
+              </button>
+            </header>
+
+            <div className="match-arena">
+              <div className="match-team">
+                <div className="match-orb match-orb-home">
+                  {matchModal.simulation.home.imageUrl ? (
+                    <img src={matchModal.simulation.home.imageUrl} alt="" />
+                  ) : (
+                    initials(matchModal.simulation.home.name)
+                  )}
+                </div>
+                <strong>{matchModal.simulation.home.name}</strong>
+                <span>OVR {matchModal.simulation.home.rating}</span>
+              </div>
+
+              <div className="match-center">
+                <div className="live-minute">
+                  {matchModal.status === "done" || matchModal.status === "error"
+                    ? "FT"
+                    : minuteLabel(activeMinute)}
+                </div>
+                <div className="live-score">
+                  <strong>{activeScore.home}</strong>
+                  <span>x</span>
+                  <strong>{activeScore.away}</strong>
+                </div>
+                <div className="battle-track">
+                  <span className="battle-dot battle-dot-one" />
+                  <span className="battle-dot battle-dot-two" />
+                  <span className="battle-flash" />
+                </div>
+              </div>
+
+              <div className="match-team">
+                <div className="match-orb match-orb-away">
+                  {matchModal.simulation.away.imageUrl ? (
+                    <img src={matchModal.simulation.away.imageUrl} alt="" />
+                  ) : (
+                    initials(matchModal.simulation.away.name)
+                  )}
+                </div>
+                <strong>{matchModal.simulation.away.name}</strong>
+                <span>OVR {matchModal.simulation.away.rating}</span>
+              </div>
+            </div>
+
+            <div className="match-progress">
+              <span style={{ width: `${matchModal.progress * 100}%` }} />
+            </div>
+
+            <div className="match-meta-grid">
+              <div>
+                <span>Acrescimos</span>
+                <strong>{liveMatchStats?.stoppage}</strong>
+              </div>
+              <div>
+                <span>Posse</span>
+                <strong>
+                  {liveMatchStats?.homePossession}% - {liveMatchStats?.awayPossession}%
+                </strong>
+              </div>
+              <div>
+                <span>Finalizacoes</span>
+                <strong>
+                  {liveMatchStats?.homeShots} - {liveMatchStats?.awayShots}
+                </strong>
+              </div>
+              <div>
+                <span>xG</span>
+                <strong>
+                  {liveMatchStats?.homeXg} - {liveMatchStats?.awayXg}
+                </strong>
+              </div>
+            </div>
+
+            <div className="event-feed">
+              {visibleMatchEvents.map((event) => (
+                <article className={`event-card event-${event.kind}`} key={event.id}>
+                  <span>{minuteLabel(event.minute)}</span>
+                  <div>
+                    <strong>{event.title}</strong>
+                    <small>{event.detail}</small>
+                  </div>
+                </article>
+              ))}
+            </div>
+
+            {matchModal.status === "saving" && (
+              <div className="match-status">Registrando resultado na AWS...</div>
+            )}
+            {matchModal.status === "error" && (
+              <div className="match-status match-status-error">
+                {matchModal.error ?? "Nao consegui registrar a partida."}
+              </div>
+            )}
+          </section>
+        </div>
+      )}
 
       <section className="market-section">
         <div className="panel-heading market-heading">
