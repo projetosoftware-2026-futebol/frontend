@@ -661,7 +661,7 @@ export default function Home() {
       apiFetch<ApiPlayer[]>("/jogador/jogadores"),
       apiFetch<ApiClub[]>("/clube/get"),
       apiFetch<{ leagues: string[] }>("/clube/leagues"),
-      apiFetch<Game[]>("/jogos/send-help"),
+      apiFetch<Game[]>("/jogos/"),
     ]);
 
     const failures: string[] = [];
