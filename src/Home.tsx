@@ -157,7 +157,8 @@ function createEmptyLineup(): LineupState {
 }
 
 function apiUrl(path: string) {
-  return `${API_BASE_URL}${path}`;
+  // return `${API_BASE_URL}${path}`;
+  return path; // Assuming a proxy is set up for development, we can use relative paths to avoid CORS issues and simplify deployment.
 }
 
 function normalizePlayer(raw: ApiPlayer): Player {
