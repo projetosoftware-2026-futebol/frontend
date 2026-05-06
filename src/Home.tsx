@@ -653,6 +653,7 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const savedMatchIdsRef = useRef(new Set<string>());
+  const clubLineupsRef = useRef<Record<number, LineupState>>({});
 
   const loadDashboard = useCallback(async (quiet = false) => {
     const [playersResult, clubsResult, leaguesResult, gamesResult] = await Promise.allSettled([
@@ -722,6 +723,21 @@ export default function Home() {
     return () => window.clearTimeout(timeoutId);
   }, [loadDashboard]);
 
+  useEffect(() => {
+    if (typeof selectedClubId === "number") {
+      clubLineupsRef.current[selectedClubId] = lineup;
+    }
+  }, [lineup, selectedClubId]);
+
+  function selectClub(clubId: number | "") {
+    setSelectedClubId(clubId);
+    setLineup(
+      typeof clubId === "number"
+        ? (clubLineupsRef.current[clubId] ?? createEmptyLineup())
+        : createEmptyLineup(),
+    );
+  }
+
   async function refreshDashboard() {
     setLoading(true);
     await loadDashboard();
@@ -736,7 +752,7 @@ export default function Home() {
       savedMatchIdsRef.current.add(simulation.id);
 
       try {
-        await apiFetch<Game>("/jogos/play", {
+        const savedGame = await apiFetch<Game>("/jogos/play", {
           method: "POST",
           body: JSON.stringify({
             time_a: String(simulation.home.id),
@@ -746,6 +762,7 @@ export default function Home() {
           }),
         });
 
+        setGames((prev: Game[]) => [...prev, savedGame]);
         setMatchModal((current) =>
           current?.simulation.id === simulation.id
             ? { ...current, progress: 1, status: "done" }
@@ -1047,10 +1064,10 @@ export default function Home() {
       await apiFetch(`/clube/delete/${clubId}`, { method: "DELETE" });
 
       if (selectedClubId === clubId) {
-        setSelectedClubId("");
         setOpponentClubId("");
-        setLineup(createEmptyLineup());
+        selectClub("");
       }
+      delete clubLineupsRef.current[clubId];
 
       setNotice({ type: "success", text: "Clube removido." });
       await loadDashboard(true);
@@ -1281,9 +1298,8 @@ export default function Home() {
               value={selectedClubId}
               onChange={(event) => {
                 const value = event.target.value ? Number(event.target.value) : "";
-                setSelectedClubId(value);
+                selectClub(value);
                 setOpponentClubId("");
-                setLineup(createEmptyLineup());
               }}
             >
               <option value="">Selecione</option>
@@ -1304,7 +1320,7 @@ export default function Home() {
                 <button
                   className="club-main"
                   type="button"
-                  onClick={() => setSelectedClubId(club.id)}
+                  onClick={() => selectClub(club.id)}
                 >
                   <span className="club-badge">
                     {club.image_url ? <img src={club.image_url} alt="" /> : club.name.slice(0, 2)}
