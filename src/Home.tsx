@@ -4,6 +4,7 @@ import Button from "@mui/material/Button";
 import Chip from "@mui/material/Chip";
 import TextField from "@mui/material/TextField";
 import "./App.css";
+import { useAuthToken } from "./useAuthToken";
 
 type Position = "ATA" | "MC" | "LD" | "LE" | "ZAG" | "GOL";
 type PlayerStatus = "DISPONIVEL" | "COMPRADO";
@@ -216,8 +217,12 @@ function extractApiError(payload: unknown, fallback: string) {
   return fallback;
 }
 
-async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
+async function apiFetch<T>(path: string, options: RequestInit = {}, token = ""): Promise<T> {
   const headers = new Headers(options.headers);
+
+  if (token) {
+    headers.set("Authorization", `Bearer ${token}`);
+  }
 
   if (options.body && !(options.body instanceof FormData) && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
@@ -631,6 +636,7 @@ function simulateMatch(home: MatchTeam, away: MatchTeam): MatchSimulation {
 }
 
 export default function Home() {
+  const { token } = useAuthToken();
   const [players, setPlayers] = useState<Player[]>([]);
   const [clubs, setClubs] = useState<Club[]>([]);
   const [games, setGames] = useState<Game[]>([]);
@@ -658,10 +664,10 @@ export default function Home() {
 
   const loadDashboard = useCallback(async (quiet = false) => {
     const [playersResult, clubsResult, leaguesResult, gamesResult] = await Promise.allSettled([
-      apiFetch<ApiPlayer[]>("/jogador/jogadores"),
-      apiFetch<ApiClub[]>("/clube/get"),
-      apiFetch<{ leagues: string[] }>("/clube/leagues"),
-      apiFetch<Game[]>("/jogos/zambom"),
+      apiFetch<ApiPlayer[]>("/jogador/jogadores", {}, token),
+      apiFetch<ApiClub[]>("/clube/get", {}, token),
+      apiFetch<{ leagues: string[] }>("/clube/leagues", {}, token),
+      apiFetch<Game[]>("/jogos/zambom", {}, token),
     ]);
 
     const failures: string[] = [];
@@ -1019,7 +1025,7 @@ export default function Home() {
           await apiFetch<ApiClub>("/clube/create", {
             method: "POST",
             body: JSON.stringify(payload),
-          }),
+          }, token),
         );
         setSelectedClubId(created.id);
         setNotice({ type: "success", text: `${created.name} criado.` });
@@ -1027,7 +1033,7 @@ export default function Home() {
         await apiFetch<ApiClub>(`/clube/update/${editingClubId}`, {
           method: "PUT",
           body: JSON.stringify(payload),
-        });
+        }, token);
         setNotice({ type: "success", text: "Clube atualizado." });
       }
 
@@ -1058,11 +1064,11 @@ export default function Home() {
           apiFetch("/clube/sell", {
             method: "POST",
             body: JSON.stringify({ club_id: clubId, player_id: player.id }),
-          }),
+          }, token),
         ),
       );
 
-      await apiFetch(`/clube/delete/${clubId}`, { method: "DELETE" });
+      await apiFetch(`/clube/delete/${clubId}`, { method: "DELETE" }, token);
 
       if (selectedClubId === clubId) {
         setOpponentClubId("");
@@ -1091,7 +1097,7 @@ export default function Home() {
       await apiFetch("/clube/buy", {
         method: "POST",
         body: JSON.stringify({ club_id: selectedClubId, player_id: player.id }),
-      });
+      }, token);
       setNotice({ type: "success", text: `${player.nome} comprado.` });
       await loadDashboard(true);
     } catch (error) {
@@ -1113,7 +1119,7 @@ export default function Home() {
       await apiFetch("/clube/sell", {
         method: "POST",
         body: JSON.stringify({ club_id: selectedClubId, player_id: player.id }),
-      });
+      }, token);
       setLineup((current) => {
         const next = { ...current };
         FORMATION_SLOTS.forEach((slot) => {
