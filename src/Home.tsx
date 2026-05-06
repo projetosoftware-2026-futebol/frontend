@@ -5,7 +5,7 @@ import Chip from "@mui/material/Chip";
 import TextField from "@mui/material/TextField";
 import "./App.css";
 
-type Position = "ATA" | "PD" | "PE" | "MC" | "LD" | "LE" | "ZAG" | "GOL";
+type Position = "ATA" | "MC" | "LD" | "LE" | "ZAG" | "GOL";
 type PlayerStatus = "DISPONIVEL" | "COMPRADO";
 type NoticeType = "success" | "error" | "info";
 
@@ -117,14 +117,14 @@ type MatchModalState = {
   error?: string;
 };
 
-const POSITIONS: Position[] = ["GOL", "LE", "ZAG", "LD", "MC", "PE", "ATA", "PD"];
+const POSITIONS: Position[] = ["GOL", "LE", "ZAG", "LD", "MC", "ATA"];
 const PLAYER_STATUS_FILTERS = ["TODOS", "DISPONIVEL", "COMPRADO"] as const;
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? "").replace(/\/$/, "");
 
 const FORMATION_SLOTS = [
-  { id: "pe", label: "PE", line: "Ataque", number: 11, positions: ["PE", "ATA"], x: 21, y: 17 },
+  { id: "pe", label: "ATA", line: "Ataque", number: 11, positions: ["ATA"], x: 21, y: 17 },
   { id: "ata", label: "ATA", line: "Ataque", number: 9, positions: ["ATA"], x: 50, y: 14 },
-  { id: "pd", label: "PD", line: "Ataque", number: 7, positions: ["PD", "ATA"], x: 79, y: 17 },
+  { id: "pd", label: "ATA", line: "Ataque", number: 7, positions: ["ATA"], x: 79, y: 17 },
   { id: "mc1", label: "MC", line: "Meio", number: 8, positions: ["MC"], x: 25, y: 40 },
   { id: "mc2", label: "MC", line: "Meio", number: 10, positions: ["MC"], x: 50, y: 44 },
   { id: "mc3", label: "MC", line: "Meio", number: 20, positions: ["MC"], x: 75, y: 40 },
@@ -161,8 +161,11 @@ function apiUrl(path: string) {
 }
 
 function normalizePlayer(raw: ApiPlayer): Player {
-  const rawPosition = raw.posicao;
-  const posicao = POSITIONS.includes(rawPosition as Position) ? (rawPosition as Position) : "ATA";
+  const rawPosition = String(raw.posicao ?? "").toUpperCase();
+  const normalizedPosition = rawPosition === "PE" || rawPosition === "PD" ? "ATA" : rawPosition;
+  const posicao = POSITIONS.includes(normalizedPosition as Position)
+    ? (normalizedPosition as Position)
+    : "ATA";
   const rawStatus =
     raw.status ?? (raw.available === false ? "COMPRADO" : ("DISPONIVEL" as PlayerStatus));
 
@@ -287,8 +290,6 @@ function poissonSample(lambda: number) {
 function positionGoalWeight(position: Position) {
   const weights: Record<Position, number> = {
     ATA: 7,
-    PD: 6.4,
-    PE: 6.4,
     MC: 3.9,
     LD: 1.8,
     LE: 1.8,
@@ -378,7 +379,7 @@ function buildMatchTeam(club: Club, squad: Player[], fallbackRating: number): Ma
     imageUrl: club.image_url,
     players: squad,
     rating,
-    attack: averagePositionRating(squad, ["ATA", "PD", "PE"], rating),
+    attack: averagePositionRating(squad, ["ATA"], rating),
     midfield: averagePositionRating(squad, ["MC"], rating),
     defense: averagePositionRating(squad, ["LD", "LE", "ZAG"], rating),
     keeper: averagePositionRating(squad, ["GOL"], rating),
@@ -1394,7 +1395,7 @@ export default function Home() {
           <div className="match-summary">
             <div>
               <span>Elenco</span>
-              <strong>{selectedClubPlayers.length}/11</strong>
+              <strong>{selectedClubPlayers.length}</strong>
             </div>
             <div>
               <span>Escalados</span>
@@ -1593,7 +1594,11 @@ export default function Home() {
             <p className="eyebrow">Mercado</p>
             <h2>Jogadores da API</h2>
           </div>
-          <Button variant="outlined" onClick={() => void refreshDashboard()}>
+          <Button
+            className="market-action market-action-refresh"
+            variant="outlined"
+            onClick={() => void refreshDashboard()}
+          >
             Atualizar
           </Button>
         </div>
@@ -1675,6 +1680,7 @@ export default function Home() {
                     <td>
                       {belongsToSelectedClub ? (
                         <Button
+                          className="market-action market-action-sell"
                           size="small"
                           variant="outlined"
                           onClick={() => void sellPlayer(player)}
@@ -1684,6 +1690,7 @@ export default function Home() {
                         </Button>
                       ) : (
                         <Button
+                          className="market-action market-action-buy"
                           size="small"
                           variant="contained"
                           onClick={() => void buyPlayer(player)}
