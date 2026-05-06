@@ -1038,6 +1038,55 @@ select option {
   background: rgba(255, 255, 255, 0.06);
 }
 
+.market-action.MuiButton-root {
+  min-width: 108px;
+  min-height: 38px;
+  border-radius: 7px;
+  font-size: 0.78rem;
+  font-weight: 900;
+  letter-spacing: 0;
+  box-shadow: none;
+}
+
+.market-action-buy.MuiButton-contained {
+  color: #09110c;
+  background: #7ee56a;
+}
+
+.market-action-buy.MuiButton-contained:hover {
+  background: #9cf88a;
+  box-shadow: 0 0 0 3px rgba(126, 229, 106, 0.18);
+}
+
+.market-action-sell.MuiButton-outlined {
+  color: #ffd2c6;
+  border-color: rgba(255, 123, 97, 0.78);
+  background: rgba(216, 73, 49, 0.14);
+}
+
+.market-action-sell.MuiButton-outlined:hover {
+  border-color: #ff8d76;
+  background: rgba(216, 73, 49, 0.24);
+}
+
+.market-action-refresh.MuiButton-outlined {
+  color: #fac84b;
+  border-color: rgba(250, 200, 75, 0.62);
+  background: rgba(250, 200, 75, 0.08);
+}
+
+.market-action-refresh.MuiButton-outlined:hover {
+  border-color: #fac84b;
+  background: rgba(250, 200, 75, 0.16);
+}
+
+.market-action.MuiButton-root.Mui-disabled {
+  border: 1px solid rgba(255, 255, 255, 0.16) !important;
+  color: rgba(247, 251, 242, 0.58) !important;
+  background: rgba(255, 255, 255, 0.1) !important;
+  opacity: 1;
+}
+
 .status-pill {
   display: inline-flex;
   align-items: center;
@@ -1131,6 +1180,10 @@ button,
 
   .market-filters {
     grid-template-columns: 1fr;
+  }
+
+  .market-action.MuiButton-root {
+    min-width: 92px;
   }
 
   .match-summary {

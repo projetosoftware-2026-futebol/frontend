@@ -1,0 +1,80 @@
+.auth-layout {
+  min-height: 100svh;
+}
+
+.auth-layout .app-shell {
+  padding-top: 82px;
+}
+
+.auth-session {
+  position: fixed;
+  top: 18px;
+  right: 28px;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: min(560px, calc(100vw - 56px));
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+  padding: 8px 10px 8px 12px;
+  color: #f7fbf2;
+  background: rgba(18, 21, 26, 0.88);
+  box-shadow: 0 18px 42px rgba(0, 0, 0, 0.24);
+  backdrop-filter: blur(12px);
+}
+
+.auth-user {
+  min-width: 0;
+  max-width: 260px;
+  overflow: hidden;
+  color: #fff;
+  font-size: 0.86rem;
+  font-weight: 900;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.auth-role {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  border-radius: 999px;
+  padding: 0 8px;
+  color: #111;
+  background: #fac84b;
+  font-size: 0.68rem;
+  font-weight: 1000;
+  text-transform: uppercase;
+}
+
+.logout-action.MuiButton-root {
+  min-height: 34px;
+  border-radius: 7px;
+  color: #f7fbf2;
+  border-color: rgba(255, 255, 255, 0.24);
+  background: rgba(255, 255, 255, 0.08);
+  font-weight: 900;
+}
+
+.logout-action.MuiButton-root:hover {
+  border-color: rgba(255, 89, 94, 0.78);
+  color: #ffd2c6;
+  background: rgba(216, 73, 49, 0.18);
+}
+
+@media (max-width: 760px) {
+  .auth-layout .app-shell {
+    padding-top: 76px;
+  }
+
+  .auth-session {
+    top: 12px;
+    right: 16px;
+    max-width: calc(100vw - 32px);
+  }
+
+  .auth-user {
+    max-width: 160px;
+  }
+}
