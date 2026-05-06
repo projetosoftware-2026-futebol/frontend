@@ -119,7 +119,7 @@ type MatchModalState = {
 
 const POSITIONS: Position[] = ["GOL", "LE", "ZAG", "LD", "MC", "ATA"];
 const PLAYER_STATUS_FILTERS = ["TODOS", "DISPONIVEL", "COMPRADO"] as const;
-const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? "").replace(/\/$/, "");
+// const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? "").replace(/\/$/, "");
 
 const FORMATION_SLOTS = [
   { id: "pe", label: "ATA", line: "Ataque", number: 11, positions: ["ATA"], x: 21, y: 17 },
