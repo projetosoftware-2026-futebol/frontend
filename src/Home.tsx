@@ -1026,6 +1026,24 @@ export default function Home() {
     setSaving(true);
 
     try {
+      const club = clubs.find((c) => c.id === clubId);
+      const clubPlayerIds = new Set<number>();
+      club?.player_ids.forEach((id) => clubPlayerIds.add(id));
+      club?.players?.forEach((p) => clubPlayerIds.add(p.player_id));
+
+      const clubPlayers = players.filter(
+        (p) => clubPlayerIds.has(p.id) || p.clube_id === clubId,
+      );
+
+      await Promise.all(
+        clubPlayers.map((player) =>
+          apiFetch("/clube/sell", {
+            method: "POST",
+            body: JSON.stringify({ club_id: clubId, player_id: player.id }),
+          }),
+        ),
+      );
+
       await apiFetch(`/clube/delete/${clubId}`, { method: "DELETE" });
 
       if (selectedClubId === clubId) {
